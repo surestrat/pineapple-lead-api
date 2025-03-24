@@ -53,6 +53,9 @@ The API is built using Go with Chi router, offering excellent performance charac
 3. Configure environment variables in `.env` file:
 
    ```properties
+   # Environment (development or production)
+   ENVIRONMENT=development
+
    # Authentication
    API_BEARER_TOKEN="your_pineapple_bearer_token"
 
@@ -85,70 +88,51 @@ The API is built using Go with Chi router, offering excellent performance charac
    go run main.go
    ```
 
-### Using Docker
+## Deployment with Coolify and Nixpacks
 
-1. Copy the example environment file and configure it:
+This project is designed to be deployed using [Coolify](https://coolify.io/) with Nixpacks for building the application.
 
-   ```bash
-   cp .env.example .env
-   # Edit .env with your specific configuration
+### Preparing for Deployment
+
+1. Make sure your code is pushed to a Git repository accessible by your Coolify instance.
+
+2. In Coolify, create a new service and select your repository.
+
+3. Choose Nixpacks as the build method.
+
+4. Configure the following environment variables in Coolify:
+
+   ```
+   ENVIRONMENT=production
+   API_BEARER_TOKEN=your_actual_production_token
+   DB_HOST=your_production_db_host
+   DB_PORT=5432
+   DB_USER=your_db_user
+   DB_PASSWORD=your_db_password
+   DB_NAME=pineapple_leads
+   DB_SSLMODE=prefer
+   PORT=9000
+   REQUEST_TIMEOUT=30
+   MAX_CONCURRENT_CALLS=10
+   LEAD_TRANSFER_ENDPOINT=https://gw.pineapple.co.za/users/motor_lead
+   QUICK_QUOTE_ENDPOINT=https://gw.pineapple.co.za/api/v1/quote/quick-quote
    ```
 
-2. Build and run with Docker Compose:
+5. Set the port configuration to match the `PORT` environment variable.
 
-   ```bash
-   docker-compose up -d
-   ```
+6. Configure a health check endpoint at `/health`.
 
-   This will:
+7. Deploy the application using Coolify's deployment tools.
 
-   - Build the application image
-   - Create a PostgreSQL database container
-   - Configure networking between the containers
-   - Set up appropriate environment variables
-   - Mount volumes for data persistence
+### Additional Deployment Configurations
 
-3. Monitor the deployment:
+For production deployments, consider setting up:
 
-   ```bash
-   docker-compose logs -f
-   ```
-
-4. Access the API at http://localhost:9000
-
-5. Check service health:
-
-   ```bash
-   curl http://localhost:9000/health
-   ```
-
-6. To stop the services:
-
-   ```bash
-   docker-compose down
-   ```
-
-7. To stop the services and remove data volumes:
-
-   ```bash
-   docker-compose down -v
-   ```
-
-#### Docker Deployment in Production
-
-For production environments, consider these additional steps:
-
-1. Use Docker secrets or a secure environment variable manager instead of .env files
-2. Set up a reverse proxy (Nginx/Traefik) with SSL termination
-3. Configure container resource limits appropriately
-4. Set up monitoring and logging solutions (Prometheus/Grafana)
-5. Use a container orchestration platform like Kubernetes for high availability
-
-Example production deployment command:
-
-```bash
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-```
+1. **Database Connection**: Link to a production-grade PostgreSQL database
+2. **Secrets Management**: Secure handling of the API bearer token and database credentials
+3. **HTTPS**: Enable SSL for secure communication
+4. **Scaling**: Configure appropriate resource allocation based on expected load
+5. **Monitoring**: Set up logging and monitoring integrations
 
 ## API Documentation
 
@@ -272,15 +256,11 @@ _For complete request/response details, please refer to the Swagger documentatio
 
 ## Development Mode
 
-The API includes a development mode that uses mock responses when you don't have a valid API bearer token. This allows you to:
+The API includes a special mode for Swagger documentation testing only. By setting the `API_BEARER_TOKEN` to `swagger_documentation_token`, mock responses will be generated automatically when accessing API endpoints through the Swagger UI. This allows for testing and exploring the API without making actual calls to the Pineapple services.
 
-1. Test the API without needing real Pineapple API credentials
-2. Develop and test frontend integrations locally
-3. Run the service without connecting to external systems
+This feature should only be used for documentation and development purposes and never in production environments.
 
-To activate development mode, set the API_BEARER_TOKEN to "your_bearer_token_here" in your .env file. The system will log a warning indicating that mock responses are being used, and it will generate appropriate mock data for all API calls.
-
-Example mock responses:
+Example mock responses when using Swagger UI:
 
 ### Lead Transfer API Mock Response
 
@@ -288,8 +268,8 @@ Example mock responses:
 {
 	"success": true,
 	"data": {
-		"uuid": "mock-1616598956",
-		"redirect_url": "https://test-pineapple-claims.herokuapp.com/car-insurance/get-started?uuid=mock-1616598956&ref=mock&name=Peter"
+		"uuid": "swagger-doc-uuid-1616598956",
+		"redirect_url": "https://test-pineapple-claims.herokuapp.com/car-insurance/get-started?uuid=swagger-doc-uuid-1616598956&ref=swagger-doc&name=Peter"
 	}
 }
 ```
@@ -299,7 +279,7 @@ Example mock responses:
 ```json
 {
 	"success": true,
-	"id": "mock-quote-1616598956",
+	"id": "swagger-doc-quote-1616598956",
 	"data": [
 		{
 			"premium": 1240.46,

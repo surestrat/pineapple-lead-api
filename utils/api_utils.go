@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -49,10 +50,20 @@ func MakeAPIRequest(endpoint string, method string, body interface{}) ([]byte, e
 		return nil, fmt.Errorf("error marshaling request body: %w", err)
 	}
 
-	// Check if we're in development mode (using placeholder token)
+	// Check if this is a Swagger documentation request
 	bearerToken := config.GetConfig().APIBearerToken
-	if bearerToken == "your_bearer_token_here" || bearerToken == "temporary_development_token" {
-		// In development mode, return a mock response instead of making a real API call
+	userAgent := os.Getenv("HTTP_USER_AGENT")
+	referer := os.Getenv("HTTP_REFERER")
+	
+	// Only use mock responses if:
+	// 1. We're using the special Swagger documentation token OR
+	// 2. The request is coming from the Swagger UI
+	isSwaggerRequest := bearerToken == "swagger_documentation_token" || 
+		strings.Contains(referer, "/swagger/") ||
+		strings.Contains(userAgent, "Swagger")
+	
+	if isSwaggerRequest {
+		// For Swagger documentation only, return a mock response
 		return createMockResponse(endpoint, method, string(jsonBody))
 	}
 
@@ -63,10 +74,6 @@ func MakeAPIRequest(endpoint string, method string, body interface{}) ([]byte, e
 	}
 
 	// Set headers
-	if bearerToken == "" || bearerToken == "your_bearer_token_here" {
-		log.Println("Warning: Using placeholder API_BEARER_TOKEN. This will not work in production.")
-	}
-	
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+bearerToken)
 
@@ -95,9 +102,9 @@ func MakeAPIRequest(endpoint string, method string, body interface{}) ([]byte, e
 	return respBody, nil
 }
 
-// createMockResponse generates a mock response for development without real API access
+// createMockResponse generates a mock response for Swagger documentation testing only
 func createMockResponse(endpoint string, method string, jsonBody string) ([]byte, error) {
-	log.Println("DEVELOPMENT MODE: Using mock response instead of calling real API")
+	log.Println("SWAGGER DOCUMENTATION MODE: Using mock response for API documentation")
 	
 	// Lead transfer endpoint mock
 	if strings.Contains(endpoint, "/users/motor_lead") {
@@ -108,10 +115,9 @@ func createMockResponse(endpoint string, method string, jsonBody string) ([]byte
 		}
 		
 		// Generate a mock UUID and redirect URL
-		uuid := fmt.Sprintf("mock-%d", time.Now().Unix())
+		uuid := fmt.Sprintf("swagger-doc-uuid-%d", time.Now().Unix())
 		firstName := fmt.Sprintf("%v", req["first_name"])
-		lastName := fmt.Sprintf("%v", req["last_name"])
-		redirectURL := fmt.Sprintf("https://test-pineapple-claims.herokuapp.com/car-insurance/get-started?uuid=%s&ref=mock&name=%s", 
+		redirectURL := fmt.Sprintf("https://test-pineapple-claims.herokuapp.com/car-insurance/get-started?uuid=%s&ref=swagger-doc&name=%s", 
 			uuid, firstName)
 		
 		mockResp := map[string]interface{}{
@@ -122,25 +128,15 @@ func createMockResponse(endpoint string, method string, jsonBody string) ([]byte
 			},
 		}
 		
-		log.Printf("Mock lead transfer for %s %s with UUID: %s", firstName, lastName, uuid)
 		return json.Marshal(mockResp)
 	}
 	
 	// Quick quote endpoint mock
 	if strings.Contains(endpoint, "/api/v1/quote/quick-quote") {
-		// Parse the request body to extract fields for the mock response
-		var req map[string]interface{}
-		if err := json.Unmarshal([]byte(jsonBody), &req); err != nil {
-			return nil, err
-		}
-		
 		// Generate a mock quote ID and values
-		quoteID := fmt.Sprintf("mock-quote-%d", time.Now().Unix())
+		quoteID := fmt.Sprintf("swagger-doc-quote-%d", time.Now().Unix())
 		premium := 1240.46 // Mock premium
 		excess := 6200.00  // Mock excess
-		
-		// Get reference ID for logging
-		refID := fmt.Sprintf("%v", req["externalReferenceId"])
 		
 		mockResp := map[string]interface{}{
 			"success": true,
@@ -153,14 +149,13 @@ func createMockResponse(endpoint string, method string, jsonBody string) ([]byte
 			},
 		}
 		
-		log.Printf("Mock quick quote for reference %s with ID: %s", refID, quoteID)
 		return json.Marshal(mockResp)
 	}
 	
 	// Default fallback for unknown endpoints
 	return json.Marshal(map[string]interface{}{
 		"success": true,
-		"message": "Mock response for development",
+		"message": "Swagger documentation mock response",
 	})
 }
 

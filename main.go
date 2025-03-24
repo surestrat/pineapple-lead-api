@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/surestrat/pineapple-lead-api/config"
@@ -26,90 +25,55 @@ func main() {
     workDir, err := os.Getwd()
     if (err != nil) {
         log.Printf("Warning: Could not get working directory: %v", err)
-    } else {
-        log.Printf("Current working directory: %s", workDir)
     }
 
-    // Check if .env file exists
-    envPath := filepath.Join(workDir, ".env")
-    if _, err := os.Stat(envPath); os.IsNotExist(err) {
-        log.Printf("Warning: .env file not found at %s", envPath)
-    } else {
-        log.Printf(".env file found at %s", envPath)
-    }
-
-    // Try to load .env file with proper error handling
-    err = godotenv.Load()
-    if err != nil {
-        log.Printf("Warning: Error loading .env file: %v", err)
-        log.Println("Will try again with explicit path")
-        
-        // Try with explicit path
-        err = godotenv.Load(envPath)
-        if err != nil {
-            log.Printf("Warning: Still failed to load .env file from %s: %v", envPath, err)
-        } else {
-            log.Println("Successfully loaded .env file from explicit path")
+    // Load .env file if in development environment
+    if os.Getenv("ENVIRONMENT") != "production" {
+        // Check if .env file exists
+        envPath := filepath.Join(workDir, ".env")
+        if _, err := os.Stat(envPath); !os.IsNotExist(err) {
+            err = godotenv.Load(envPath)
+            if err != nil {
+                log.Printf("Warning: Error loading .env file: %v", err)
+            } else {
+                log.Println("Loaded configuration from .env file")
+            }
         }
     } else {
-        log.Println("Successfully loaded .env file")
+        log.Println("Running in production mode - using environment variables")
     }
 
-    // Print all environment variables for debugging (except sensitive ones)
-    log.Println("Environment variables loaded:")
-    for _, env := range os.Environ() {
-        if len(env) > 15 && (env[:15] == "API_BEARER_TOKE" || env[:12] == "DB_PASSWORD=") {
-            // Don't print sensitive values, just show that they're set
-            log.Printf("  %s=[SET]", env[:strings.Index(env, "=")])
-        } else {
-            log.Printf("  %s", env)
-        }
-    }
-
-    // Check API_BEARER_TOKEN specifically
+    // Check API_BEARER_TOKEN
     tokenValue := os.Getenv("API_BEARER_TOKEN")
     if tokenValue == "" {
         log.Println("ERROR: API_BEARER_TOKEN environment variable is not set.")
-        log.Println("Please set a valid bearer token in your .env file or environment variables.")
-        log.Println("Example: API_BEARER_TOKEN=your_token_from_pineapple")
-        
-        // Try a direct approach as a fallback
-        log.Println("Setting a temporary token for development... MOCK RESPONSES WILL BE USED")
-        os.Setenv("API_BEARER_TOKEN", "temporary_development_token")
-        if os.Getenv("API_BEARER_TOKEN") != "" {
-            log.Println("Set temporary token for development MOCK mode")
-        } else {
-            log.Println("Failed to set temporary token")
-            os.Exit(1)
-        }
-    } else if tokenValue == "your_bearer_token_here" {
-        log.Println("WARNING: You are using the placeholder API_BEARER_TOKEN value.")
-        log.Println("*** DEVELOPMENT MODE ACTIVATED: Real APIs will NOT be called ***")
-        log.Println("*** The system will generate MOCK responses instead ***")
-        log.Println("Replace the token with your actual API token to make real API calls.")
-    } else {
-        log.Println("API_BEARER_TOKEN is set properly - will make real API calls")
+        log.Println("A valid bearer token is required for production operation.")
+        os.Exit(1)
+    } else if tokenValue == "swagger_documentation_token" {
+        log.Println("WARNING: Using documentation token. Mock responses will be used ONLY for Swagger documentation.")
+        log.Println("This should not be used in production environments.")
     }
 
-    // Validate other aspects of configuration
+    // Validate configuration
     if err := config.ValidateConfig(); err != nil {
-        log.Printf("Configuration warning: %v", err)
-        log.Println("Continuing with default values for development...")
+        log.Printf("Configuration error: %v", err)
+        log.Println("Fix configuration issues before continuing.")
+        os.Exit(1)
     }
 
-    // Initialize database with better error handling
+    // Initialize database
     if err := db.InitDB(); err != nil {
         log.Printf("Database error: %v", err)
-        log.Println("Continuing without database for development purposes.")
-        log.Println("The API will function but data won't be persisted.")
-    } else {
-        defer db.Close()
-        
-        // Run database migrations
-        if err := db.MigrateUp(); err != nil {
-            log.Printf("Migration warning: %v", err)
-            log.Println("Continuing without migrations. Some features may not work correctly.")
-        }
+        log.Println("The application requires a valid database connection.")
+        os.Exit(1)
+    }
+    defer db.Close()
+    
+    // Run database migrations
+    if err := db.MigrateUp(); err != nil {
+        log.Printf("Migration error: %v", err)
+        log.Println("Database schema must be properly initialized.")
+        os.Exit(1)
     }
 
     // Configure Go's runtime for optimal concurrency
