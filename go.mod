@@ -1,6 +1,6 @@
 module github.com/surestrat/pineapple-lead-api
 
-go 1.23.3
+go 1.23
 
 require (
 	github.com/didip/tollbooth/v7 v7.0.2
