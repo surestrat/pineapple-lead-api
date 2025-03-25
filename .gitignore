@@ -1,35 +1,69 @@
-# Binaries for programs and plugins
-*.exe
-*.exe~
-*.dll
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
 *.so
-*.dylib
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Test binary, built with `go test -c`
-*.test
+# Virtual Environment
+.env
+.venv
+env/
+venv/
+ENV/
 
-# Output of the go coverage tool, specifically when used with LiteIDE
-*.out
-
-# Dependency directories (remove the comment below to include it)
-vendor/
-
-# Go workspace file
-go.work
-
-# IDE specific files
+# IDE
 .idea/
 .vscode/
 *.swp
 *.swo
 
-# OS specific files
+# SQLite
+*.db
+*.sqlite3
+
+# Logs
+*.log
+
+# Coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+coverage.xml
+*.cover
+
+# Static files
+static/
+
+# Additional security-related files
+*.pem
+*.key
+*.crt
+*.csr
+*.der
+*.p12
+*.pfx
+.env.*
+!.env.example
+
+# Local development files
+local_settings.py
+docker-compose.override.yml
 .DS_Store
-Thumbs.db
-
-# Local environment files
-.env
-.env.local
-
-# Build output
-bin/
