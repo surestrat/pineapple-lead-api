@@ -1,0 +1,1 @@
+# This file initializes the quick quote module.
