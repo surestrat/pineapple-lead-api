@@ -21,49 +21,39 @@ wheels/
 *.egg
 
 # Virtual Environment
-.env
-.venv
-env/
 venv/
+env/
 ENV/
+
+# Environment Variables
+.env
+*.env
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
+.project
+.classpath
+.settings/
 
-# SQLite
-*.db
-*.sqlite3
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+nosetests.xml
+coverage.xml
 
 # Logs
 *.log
+logs/
+log/
 
-# Coverage reports
-htmlcov/
-.tox/
-.coverage
-.coverage.*
-.cache
-coverage.xml
-*.cover
-
-# Static files
-static/
-
-# Additional security-related files
-*.pem
-*.key
-*.crt
-*.csr
-*.der
-*.p12
-*.pfx
-.env.*
-!.env.example
-
-# Local development files
-local_settings.py
-docker-compose.override.yml
+# System
 .DS_Store
+Thumbs.db
+
+# Project specific
+docker-compose.override.yml
