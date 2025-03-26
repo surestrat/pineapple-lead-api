@@ -39,6 +39,10 @@ class Settings:
                     Defaults to "/users/motor_lead".
             pineapple_quote_endpoint (str): Endpoint for Pineapple quote.
                     Defaults to "/api/v1/quote/quick-quote".
+            test_username (str): Username for testing.
+                    Defaults to "test".
+            test_password (str): Password for testing.
+                    Defaults to "test".
     """
 
     secret_key: str = os.getenv("SECRET_KEY", "your-secret-key")
@@ -70,6 +74,8 @@ class Settings:
     pineapple_quote_endpoint: str = os.getenv(
         "PINEAPPLE_QUOTE_ENDPOINT", "/api/v1/quote/quick-quote"
     )
+    test_username: str = os.getenv("TEST_USERNAME", "test")
+    test_password: str = os.getenv("TEST_PASSWORD", "test")
 
 
 settings = Settings()

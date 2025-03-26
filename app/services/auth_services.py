@@ -2,7 +2,7 @@ from app.auth.jwt_utils import create_access_token
 from datetime import timedelta
 from app.schemas.auth_schemas import User, Token
 from fastapi import HTTPException
-
+from app.config.settings import settings
 
 async def authenticate_user(user: User) -> Token:
     """Authenticate a user and generate a JWT access token.
@@ -17,7 +17,7 @@ async def authenticate_user(user: User) -> Token:
         HTTPException: If authentication fails with 401 status code.
     """
 
-    if user.username == "test" and user.password == "test":
+    if user.username == settings.test_username and user.password == settings.test_password:
         access_token = create_access_token(
             data={"sub": user.username}, expires_delta=timedelta(minutes=30)
         )
