@@ -14,6 +14,8 @@ A FastAPI-based service that integrates with Pineapple's insurance API for handl
 - [Error Handling](#error-handling)
 - [Logging](#logging)
 - [Environment Variables](#environment-variables)
+- [Testing](#testing)
+- [Troubleshooting](#troubleshooting)
 
 ## Overview
 
@@ -297,11 +299,122 @@ docker-compose down
 - View container status: `docker-compose ps`
 - Scale services: `docker-compose up -d --scale api=3`
 
-## Support
+## Testing
 
-For issues and support:
+### Running Tests
 
-1. Check logs for detailed error messages
-2. Verify environment configuration
-3. Check Pineapple API status
-4. Verify Appwrite connectivity
+You can test the API using the provided utilities.
+
+#### 1. Using `test_api.py`
+
+Run the `test_api.py` script to test specific endpoints or all endpoints:
+
+```bash
+# Test lead creation
+python test_api.py --lead
+
+# Test quote creation
+python test_api.py --quote
+
+# Run all tests
+python test_api.py --all
+```
+
+You can also specify a custom endpoint and method:
+
+```bash
+python test_api.py --endpoint /api/v1/leads --method POST
+```
+
+#### 2. Using `run_tests.bat` (Windows)
+
+For Windows users, a batch file is provided for convenience:
+
+```cmd
+run_tests.bat
+```
+
+Follow the menu prompts to select and run tests.
+
+#### 3. Using `curl_commands.sh` (Linux/Mac)
+
+For Linux/Mac users, a shell script is provided to test the API using `curl`:
+
+```bash
+bash curl_commands.sh
+```
+
+This script will:
+
+1. Authenticate and retrieve a token.
+2. Use the token to create a lead.
+
+#### 4. Debugging Tokens
+
+Use the `debug_token.py` utility to decode and verify JWT tokens:
+
+```bash
+python app/utils/debug_token.py <your-jwt-token>
+```
+
+#### 5. Diagnosing Environment Issues
+
+Run the `env_diagnosis.py` script to check for missing or misconfigured environment variables:
+
+```bash
+python app/utils/env_diagnosis.py
+```
+
+#### 6. Validating Environment Configuration
+
+Run the `validate_env.py` script to validate your environment setup:
+
+```bash
+python validate_env.py
+```
+
+#### 7. Manual Testing with Swagger UI
+
+The API includes Swagger UI documentation that allows interactive testing:
+
+1. Start the application:
+
+   ```bash
+   uvicorn app.main:app --reload --port 8000
+   ```
+
+2. Open a web browser and navigate to: http://localhost:8000
+
+3. You'll see the Swagger UI interface with all available endpoints.
+
+4. To authenticate:
+
+   - Click on the `/api/v1/auth/token` endpoint
+   - Click the "Try it out" button
+   - Enter the test credentials:
+     ```json
+     {
+     	"username": "test",
+     	"password": "test"
+     }
+     ```
+   - Click "Execute"
+   - Copy the `access_token` value from the response
+
+5. To test protected endpoints:
+   - Click on the endpoint you want to test (e.g., `/api/v1/leads`)
+   - Click the "Authorize" button at the top right
+   - Enter your token with the format: `Bearer <your-token>`
+   - Click "Authorize"
+   - Now you can test the protected endpoints
+
+### Understanding Test Logs
+
+When running the application with `LOG_LEVEL=DEBUG`, you'll see detailed logs:
+
+- **Authentication logs**: Show the JWT token creation and validation
+- **Request processing logs**: Show incoming requests and their headers
+- **Authorization logs**: Show token validation results
+- **API call logs**: Show requests to external APIs (Pineapple and Appwrite)
+
+Typical log patterns:

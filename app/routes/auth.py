@@ -1,28 +1,25 @@
-from fastapi import APIRouter, HTTPException, Depends, Request
-from app.schemas.auth_schemas import User, Token
+from fastapi import APIRouter, Request
+from app.schemas.auth_schemas import Token, User
 from app.services.auth_services import authenticate_user
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from app.config.settings import settings
+from app.utils.logger import logger
 
-limiter = Limiter(key_func=get_remote_address)
 router = APIRouter()
 
 
 @router.post("/token", response_model=Token)
-@limiter.limit(f"{settings.rate_limit}/minute")
-async def login_for_access_token(request: Request, user: User):
-    """Endpoint to authenticate a user and return an access token.
-    This function authenticates a user and returns a JWT access token if the
-    credentials are valid.
-    Args:
-        request (Request): The incoming HTTP request.
-        user (User): The user credentials provided for authentication.
-    Returns:
-        dict: A dictionary containing the access token and token type if authentication
-            is successful. The token is a JWT with an expiration time.
-    Raises:
-        HTTPException: If authentication fails due to invalid credentials.
-    """
+async def login_for_access_token(user: User, request: Request):
+    """Get an access token with username and password."""
+    logger.debug("==== LOGIN REQUEST ====")
+    client_ip = request.client.host if request.client else "Unknown"
+    logger.debug(f"Client IP: {client_ip}")
+    logger.debug(f"Headers: {dict(request.headers)}")
+    logger.debug(f"Login request for user: {user.username}")
 
-    return await authenticate_user(user)
+    token = await authenticate_user(user)
+
+    # Add debug information about the token
+    logger.debug(f"Generated token with length: {len(token.access_token)}")
+    logger.debug(f"Token type: {token.token_type}")
+
+    logger.debug("Login successful, returning token")
+    return token

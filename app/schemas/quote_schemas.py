@@ -1,6 +1,6 @@
 from typing import List, Optional
 from pydantic import BaseModel, Field
-from datetime import date
+from datetime import date, datetime
 from enum import Enum
 
 
@@ -44,6 +44,53 @@ class VehicleCategory(str, Enum):
     PV = "PV"
     BS = "BS"
     DS = "DS"
+
+
+class QuoteStatus(str, Enum):
+    """
+    Enumeration of possible quote status values.
+
+    Attributes:
+        NEW: The quote has just been created
+        PENDING: The quote has been created but not yet processed by Pineapple API
+        COMPLETED: The quote has been successfully processed by Pineapple API
+        FAILED: The quote processing failed
+    """
+
+    NEW = "new"
+    PENDING = "pending"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class VehicleUseType(str, Enum):
+    """
+    Enumeration of vehicle use types.
+
+    Attributes:
+        PRIVATE: Personal use of the vehicle
+        BUSINESS: Business use of the vehicle
+        COMMERCIAL: Commercial use of the vehicle
+    """
+
+    PRIVATE = "Private"
+    BUSINESS = "Business"
+    COMMERCIAL = "Commercial"
+
+
+class VehicleCoverCode(str, Enum):
+    """
+    Enumeration of insurance cover types.
+
+    Attributes:
+        COMPREHENSIVE: Full comprehensive insurance
+        THIRD_PARTY: Third party only insurance
+        THIRD_PARTY_FIRE_THEFT: Third party, fire and theft insurance
+    """
+
+    COMPREHENSIVE = "Comprehensive"
+    THIRD_PARTY = "ThirdParty"
+    THIRD_PARTY_FIRE_THEFT = "ThirdPartyFireAndTheft"
 
 
 class MaritalStatus(str, Enum):
@@ -160,7 +207,7 @@ class Vehicle(BaseModel):
     year: int = Field(..., description="The manufacturing year of the vehicle")
     make: str = Field(..., description="Manufacturer of the vehicle")
     model: str = Field(..., description="The specific model of the vehicle")
-    mmCode: str = Field(..., description="Manufacturer’s model code")
+    mmCode: str = Field(..., description="Manufacturer's model code")
     modified: str = Field(
         ...,
         description="Indicates if the vehicle has been modified ('Y' for Yes, 'N' for No)",
@@ -211,6 +258,7 @@ class QuickQuoteRequest(BaseModel):
             through external systems.
         vehicles (List[Vehicle]): A list of vehicle objects containing details about
             the vehicle(s) for which insurance quotes are being requested.
+        status (Optional[QuoteStatus]): Status of the quote processing (auto-set to PENDING if not provided)
     """
 
     source: str = Field(..., description="Identifies the source of the quote request")
@@ -219,6 +267,67 @@ class QuickQuoteRequest(BaseModel):
     )
     vehicles: List[Vehicle] = Field(
         ..., description="Contains the vehicle(s) for which a quote is being requested"
+    )
+    status: Optional[QuoteStatus] = Field(
+        default=QuoteStatus.NEW, description="Status of the quote processing"
+    )
+    created_at: Optional[datetime] = Field(
+        default_factory=datetime.now, description="Timestamp when the quote was created"
+    )
+
+
+class QuoteDocumentModel(BaseModel):
+    """
+    Model matching the structure used in Appwrite for storing quotes.
+    This ensures compatibility with the Appwrite database schema.
+
+    Attributes:
+        source (str): Identifies the source system or channel of the quote
+        externalReferenceId (str): A unique reference identifier for tracking
+        pineapple_quote_id (Optional[str]): ID returned from Pineapple's API
+        premium (Optional[float]): Insurance premium amount
+        excess (Optional[int]): Excess amount
+        status (QuoteStatus): Status of the quote (pending, completed, failed)
+        vehicles_data (str): JSON string containing all vehicles data
+        vehicle_year (Optional[int]): Year of the first vehicle
+        vehicle_make (Optional[str]): Make of the first vehicle
+        vehicle_model (Optional[str]): Model of the first vehicle
+        vehicle_category (Optional[str]): Category of the first vehicle
+        vehicle_use_type (Optional[str]): Use type of the first vehicle
+        vehicle_cover_code (Optional[str]): Cover code of the first vehicle
+        driver_id_number (Optional[str]): ID number of the first driver
+        driver_email (Optional[str]): Email of the first driver
+        driver_mobile (Optional[str]): Mobile number of the first driver
+    """
+
+    source: str = Field(..., description="Source of the quote")
+    externalReferenceId: str = Field(..., description="External reference ID")
+    pineapple_quote_id: Optional[str] = Field(None, description="ID from Pineapple API")
+    premium: Optional[float] = Field(None, description="Insurance premium amount")
+    excess: Optional[int] = Field(None, description="Excess amount")
+    status: QuoteStatus = Field(default=QuoteStatus.NEW, description="Quote status")
+    vehicles_data: str = Field(..., description="JSON string of vehicles data")
+    vehicle_year: Optional[int] = Field(None, description="Year of first vehicle")
+    vehicle_make: Optional[str] = Field(None, description="Make of first vehicle")
+    vehicle_model: Optional[str] = Field(None, description="Model of first vehicle")
+    vehicle_category: Optional[str] = Field(
+        None, description="Category of first vehicle"
+    )
+    vehicle_use_type: Optional[str] = Field(
+        None, description="Use type of first vehicle"
+    )
+    vehicle_cover_code: Optional[str] = Field(
+        None, description="Cover code of first vehicle"
+    )
+    driver_id_number: Optional[str] = Field(
+        None, description="ID number of first driver"
+    )
+    driver_email: Optional[str] = Field(None, description="Email of first driver")
+    driver_mobile: Optional[str] = Field(
+        None, description="Mobile number of first driver"
+    )
+    created_at: Optional[datetime] = Field(
+        default_factory=datetime.now, description="Timestamp when the quote was created"
     )
 
 
