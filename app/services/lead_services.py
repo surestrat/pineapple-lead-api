@@ -223,6 +223,45 @@ async def create_lead_service(
                 except:
                     logger.warning("Could not parse response as JSON")
 
+                # Handle successful response from Pineapple API and extract redirect URL
+                if response.status_code == 200 and response_json:
+                    # Extract data from Pineapple response
+                    if isinstance(response_json, dict) and "data" in response_json:
+                        pineapple_data = response_json.get("data", {})
+
+                        # Extract uuid and redirect_url from Pineapple response
+                        pineapple_uuid = pineapple_data.get("uuid")
+                        pineapple_redirect = pineapple_data.get("redirect_url")
+
+                        logger.info(
+                            f"Received from Pineapple - UUID: {pineapple_uuid}, Redirect URL: {pineapple_redirect}"
+                        )
+
+                        # Update Appwrite document with Pineapple data
+                        update_data = {"status": LeadStatus.COMPLETED.value}
+
+                        if pineapple_uuid:
+                            update_data["pineapple_uuid"] = pineapple_uuid
+
+                        if pineapple_redirect:
+                            update_data["redirect_url"] = pineapple_redirect
+
+                        # Update document with Pineapple data
+                        try:
+                            db.update_document(
+                                database_id=database_id,
+                                collection_id=collection_id,
+                                document_id=document["$id"],
+                                data=update_data,
+                            )
+                            logger.info(
+                                f"Updated document with Pineapple data: {update_data}"
+                            )
+                        except Exception as update_error:
+                            logger.warning(
+                                f"Failed to update document with Pineapple data: {update_error}"
+                            )
+
                 # Handle specific error cases
                 if response.status_code >= 400:
                     error_msg = f"Pineapple API error: {response.status_code}"
@@ -274,7 +313,7 @@ async def create_lead_service(
 
                 response.raise_for_status()
 
-                # Update status to PENDING when sending to Pineapple API
+                # Update status after successfully sending to Pineapple API
                 try:
                     db.update_document(
                         database_id=database_id,
@@ -288,7 +327,6 @@ async def create_lead_service(
                 except Exception as update_error:
                     logger.warning(f"Failed to update lead status: {update_error}")
 
-                # Update lead status in Appwrite based on successful API response
                 try:
                     db.update_document(
                         database_id=database_id,
@@ -323,11 +361,37 @@ async def create_lead_service(
                     status_code=504, detail="Pineapple API request timed out"
                 )
 
+        # Construct the response using data from Pineapple if available
+        pineapple_uuid = None
+        pineapple_redirect = None
+
+        if (
+            response_json
+            and isinstance(response_json, dict)
+            and "data" in response_json
+        ):
+            data = response_json.get("data", {})
+            if isinstance(data, dict):
+                pineapple_uuid = data.get("uuid")
+                pineapple_redirect = data.get("redirect_url")
+
+        # Use Pineapple redirect URL if available, otherwise create a local one
+        redirect_url = (
+            pineapple_redirect if pineapple_redirect else f"/leads/{document['$id']}"
+        )
+
+        # Create complete response
+        response_data = {
+            "uuid": document["$id"],
+            "pineapple_uuid": pineapple_uuid,
+            "redirect_url": redirect_url,
+        }
+
+        logger.info(f"Returning response with redirect URL: {redirect_url}")
+
         return LeadTransferResponse(
             success=True,
-            data=LeadTransferResponseData(
-                uuid=document["$id"], redirect_url=f"/leads/{document['$id']}"
-            ),
+            data=LeadTransferResponseData(**response_data),
         )
 
     except Exception as e:

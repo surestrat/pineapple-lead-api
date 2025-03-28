@@ -104,10 +104,14 @@ class LeadTransferResponseData(BaseModel):
     Attributes:
         uuid (str): Unique identifier for the lead.
         redirect_url (str): URL to redirect the user to after the lead transfer.
+        pineapple_uuid (Optional[str]): Unique identifier from Pineapple API if available.
     """
 
     uuid: str = Field(..., description="Unique identifier for the lead")
     redirect_url: str = Field(..., description="URL to redirect the user to")
+    pineapple_uuid: Optional[str] = Field(
+        None, description="Pineapple UUID if available"
+    )
 
 
 class LeadTransferResponse(BaseModel):

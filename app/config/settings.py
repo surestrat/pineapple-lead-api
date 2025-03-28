@@ -147,9 +147,6 @@ class Settings:
     ).split(",")
 
     # External API
-    pineapple_api_base_url: str = get_env(
-        "PINEAPPLE_API_BASE_URL", "http://gw-test.pineapple.co.za"
-    )
     pineapple_lead_endpoint: str = get_env(
         "PINEAPPLE_LEAD_ENDPOINT", "/users/motor_lead"
     )
@@ -160,6 +157,16 @@ class Settings:
     # Test credentials - check both normal and VITE_ prefixed versions
     test_username: str = get_env("TEST_USERNAME", "test")
     test_password: str = get_env("TEST_PASSWORD", "test")
+
+    @property
+    def pineapple_api_base_url(self) -> str:
+        """
+        Get the Pineapple API base URL with correct formatting.
+        Ensures it doesn't have trailing slashes that could cause URL issues.
+        """
+        url = get_env("PINEAPPLE_API_BASE_URL", "http://gw.pineapple.co.za")
+        # Ensure URL doesn't end with slash to prevent double slashes in URLs
+        return url.rstrip("/")
 
     def validate_api_token(self):
         """Validate that API token is correctly formatted and log warnings if not"""

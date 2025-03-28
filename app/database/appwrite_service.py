@@ -128,14 +128,18 @@ async def create_quote_document(
     # Log the incoming data
     logger.debug(f"Creating quote document with data: {quote_data}")
 
+    # Handle date serialization before processing
+    from app.utils.json_utils import serialize_dates
+    import json
+
     # Extract vehicle data - ensure we have it
     vehicles = quote_data.get("vehicles", [])
     if not vehicles:
         logger.error("No vehicles provided in quote data")
         raise ValueError("No vehicles provided in quote data")
 
-    # Serialize vehicles array to JSON string
-    vehicles_json = json.dumps(vehicles)
+    # Properly serialize vehicles with date objects
+    vehicles_json = json.dumps(vehicles, default=serialize_dates)
 
     # Extract key fields for clean storage
     first_vehicle = vehicles[0]

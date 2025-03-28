@@ -13,6 +13,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from app.utils.logger import logger
 from typing import Optional
+from app.utils.response_helper import enhance_response
 
 limiter = Limiter(key_func=get_remote_address)
 router = APIRouter()
@@ -98,8 +99,25 @@ async def create_lead(
             settings.appwrite_leads_collection_id,
             new_lead_data,
         )
-        logger.info(f"Lead created: {new_lead_data.email}")
+
+        # Enhance the response with absolute URLs only if needed
+        if result.data and result.data.redirect_url:
+            # Don't modify URLs that are already absolute (from Pineapple)
+            if result.data.redirect_url.startswith("/"):
+                base_url = str(request.base_url).rstrip("/")
+                result.data.redirect_url = f"{base_url}{result.data.redirect_url}"
+                logger.debug(
+                    f"Enhanced local redirect URL to absolute: {result.data.redirect_url}"
+                )
+            else:
+                # This is likely a Pineapple URL - use as is
+                logger.debug(
+                    f"Using Pineapple redirect URL as-is: {result.data.redirect_url}"
+                )
+
+        logger.info(f"Lead created successfully: {new_lead_data.email}")
         return result
+
     except HTTPException as e:
         # Re-raise HTTP exceptions
         logger.error(f"HTTP error creating lead: {e.detail}")
@@ -110,7 +128,6 @@ async def create_lead(
         import traceback
 
         logger.error(f"Exception traceback: {traceback.format_exc()}")
-
         # Check for specific external API error patterns
         error_str = str(e)
         if "Internal Server Error" in error_str and "pineapple" in error_str.lower():
@@ -132,4 +149,73 @@ async def create_lead(
                 status_code=400, detail=f"Missing required field: {missing_attr}"
             )
 
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{lead_id}", response_model=dict)
+async def get_lead(
+    lead_id: str,
+    request: Request,
+    authorization: Optional[str] = Header(None),
+):
+    """
+    Get a lead by its ID.
+
+    Args:
+        lead_id: ID of the lead to retrieve
+        request: The FastAPI request object
+        authorization: Optional authorization header
+
+    Returns:
+        The lead data
+    """
+    # Validate the token manually (same as create_lead)
+    if not authorization or not authorization.startswith("Bearer "):
+        logger.warning("Missing or invalid authorization header format")
+        raise HTTPException(
+            status_code=401,
+            detail="Missing or invalid token. Please include an Authorization header with format: Bearer <token>",
+        )
+
+    token = authorization.split(" ")[1]
+
+    # Try to validate token
+    try:
+        # Try as JWT token first
+        try:
+            payload = decode_access_token(token)
+            logger.debug(f"JWT token validated: {payload}")
+        except Exception as e:
+            # If JWT validation fails, check if it's the API token
+            if token != settings.api_bearer_token:
+                logger.warning(f"Invalid token: {str(e)}")
+                raise HTTPException(status_code=401, detail="Invalid token")
+            else:
+                logger.debug("Using API bearer token for authentication")
+    except Exception as e:
+        logger.error(f"Token validation error: {str(e)}")
+        raise HTTPException(status_code=401, detail=f"Token validation error: {str(e)}")
+
+    try:
+        client = get_appwrite_client()
+        db = Databases(client)
+
+        # Get the document from Appwrite
+        document = db.get_document(
+            database_id=settings.appwrite_database_id,
+            collection_id=settings.appwrite_leads_collection_id,
+            document_id=lead_id,
+        )
+
+        # Check if the document exists
+        if not document:
+            raise HTTPException(status_code=404, detail="Lead not found")
+
+        # Return the lead data
+        return {"success": True, "data": document}
+
+    except Exception as e:
+        logger.error(f"Error retrieving lead: {str(e)}")
+        if "Document with the requested ID could not be found" in str(e):
+            raise HTTPException(status_code=404, detail="Lead not found")
         raise HTTPException(status_code=500, detail=str(e))

@@ -14,9 +14,11 @@ from fastapi.openapi.utils import get_openapi
 import fastapi
 import os
 import sys
+from app.config.settings import Settings
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from pathlib import Path
+from datetime import datetime
 
 
 # Add this at the beginning, before creating the FastAPI app
@@ -200,7 +202,35 @@ app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
 @app.get("/health")
 async def health_check():
     """Performs an API health check."""
-    return {"status": "ok"}
+    health_info = {
+        "status": "ok",
+        "version": "2.0.0",
+        "timestamp": datetime.now().isoformat(),
+        "services": {
+            "appwrite": {"status": "unknown", "endpoint": Settings.appwrite_endpoint},
+            "pineapple": {
+                "status": "unknown",
+                "endpoint": Settings.pineapple_api_base_url,
+            },
+        },
+    }
+
+    # Check environment variables
+    if "YOUR_" in Settings.appwrite_endpoint or not Settings.appwrite_endpoint:
+        health_info["services"]["appwrite"]["status"] = "misconfigured"
+    else:
+        health_info["services"]["appwrite"]["status"] = "configured"
+
+    # Check Pineapple API token format
+    api_token = Settings.api_bearer_token
+    if "KEY=" in api_token and "SECRET=" in api_token:
+        health_info["services"]["pineapple"]["status"] = "configured"
+        health_info["services"]["pineapple"]["token_format"] = "KEY=xxx SECRET=xxx"
+    else:
+        health_info["services"]["pineapple"]["status"] = "warning"
+        health_info["services"]["pineapple"]["token_format"] = "non-standard"
+
+    return health_info
 
 
 @app.on_event("startup")
