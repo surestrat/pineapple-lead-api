@@ -1,15 +1,19 @@
 fastapi
 uvicorn[standard]
 pydantic
+pydantic[email]
+pydantic-settings
+python-dotenv
+httpx
 python-jose[cryptography]
 passlib[bcrypt]
-appwrite
-slowapi
-python-dotenv
+email-validator
 rich
-python-multipart  # For form data handling
-email-validator  # For email validation
-bcrypt  # For password hashing
-pytest  # For testing
-httpx  # For async HTTP requests
-PyJWT
+slowapi
+supabase
+requests
+python-multipart
+sqlalchemy
+alembic
+asyncpg
+psycopg2-binary

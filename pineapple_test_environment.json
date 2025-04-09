@@ -1,0 +1,31 @@
+{
+	"id": "pineapple-test-env",
+	"name": "Pineapple Test Environment",
+	"values": [
+		{
+			"key": "apiKey",
+			"value": "PIRiCoLi8O5PhnWFWxLSrm8p",
+			"type": "secret",
+			"enabled": true
+		},
+		{
+			"key": "apiSecret",
+			"value": "OOMGBYqtRb5avhq7te2UK76s6vTSVkJJFTxtM0mDxy2D9gWBhG4NGoui7tdPMvXR",
+			"type": "secret",
+			"enabled": true
+		},
+		{
+			"key": "bearerToken",
+			"value": "KEY={{apiKey}} SECRET={{apiSecret}}",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "baseUrl",
+			"value": "http://gw-test.pineapple.co.za",
+			"type": "default",
+			"enabled": true
+		}
+	],
+	"_postman_variable_scope": "environment"
+}

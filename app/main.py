@@ -1,341 +1,209 @@
-from fastapi import FastAPI
-from app.routes import leads, quotes, auth
-from slowapi import Limiter
+import logging
+from contextlib import asynccontextmanager
+import httpx
+from fastapi import FastAPI, Request, status, APIRouter
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import JSONResponse
+
+# Rate Limiting Imports
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-from app.utils.logger import logger
-from fastapi import Request
-from fastapi.middleware.cors import CORSMiddleware
-from app.middleware.auth_middleware import BearerTokenMiddleware
-from fastapi.security import HTTPBearer, OAuth2PasswordBearer
-from fastapi.openapi.utils import get_openapi
-import fastapi
-import os
-import sys
-from app.config.settings import Settings
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
-from pathlib import Path
-from datetime import datetime
+
+# Import the centralized limiter
+from app.core.rate_limiter import limiter
+
+from app.api.v1.api import api_router
+from app.core.config import settings
+from app.core.logging_config import setup_logging  # Import the setup function
+
+# --- Initialize Logging ---
+# Call this early, passing the log level from settings
+setup_logging(log_level_str=settings.LOG_LEVEL)
+logger = logging.getLogger(__name__)  # Get logger after setup
+
+# Initialize pineapple_router to None before attempting import
+pineapple_router: APIRouter | None = None
+HAS_PINEAPPLE_ROUTES = False
+
+# Import the pineapple router if it exists, otherwise handle the import error gracefully
+try:
+    from app.api.routes.pineapple_routes import router as pineapple_router
+
+    HAS_PINEAPPLE_ROUTES = pineapple_router is not None
+    logger.info("Successfully imported Pineapple routes")
+except ImportError as e:
+    logger.warning(
+        f"Pineapple routes module not found, will not include these endpoints: {e}"
+    )
+    HAS_PINEAPPLE_ROUTES = False
 
 
-# Add this at the beginning, before creating the FastAPI app
-def check_environment():
-    """Check environment variables and abort if critical ones are missing"""
-    from app.config.settings import settings
+# --- Optional HTTPX Logging Hooks ---
+async def log_request_hook(request: httpx.Request):
+    logger.debug(f"--> HTTPX Request: {request.method} {request.url}")
+    # Mask Authorization header if logging:
+    headers = {
+        k: (v if k.lower() != "authorization" else "Bearer [MASKED]")
+        for k, v in request.headers.items()
+    }
+    logger.debug(f"    Headers: {headers}")
 
-    critical_vars = [
-        ("APPWRITE_ENDPOINT", settings.appwrite_endpoint),
-        ("APPWRITE_PROJECT_ID", settings.appwrite_project_id),
-        ("API_BEARER_TOKEN", settings.api_bearer_token),
+
+async def log_response_hook(response: httpx.Response):
+    logger.debug(
+        f"<-- HTTPX Response: {response.status_code} ({response.reason_phrase}) for {response.url}"
+    )
+    if settings.LOG_LEVEL.upper() == "DEBUG":
+        # Only log response body in DEBUG mode
+        try:
+            # Try to get JSON response
+            response_text = response.text
+            logger.debug(
+                f"    Body (first 500 chars): {response_text[:500]}{'...' if len(response_text) > 500 else ''}"
+            )
+        except:
+            logger.debug("    Could not log response body")
+
+
+# --- Lifespan for managing resources ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info(f"Starting up {settings.PROJECT_NAME}...")
+
+    # Setup shared HTTP client for Pineapple API
+    headers = {
+        "Authorization": (
+            f"Bearer {settings.PINEAPPLE_API_TOKEN}"
+            if settings.PINEAPPLE_API_TOKEN
+            else ""
+        ),
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    # Increased timeout slightly, adjust based on Pineapple's typical response time
+    timeout = httpx.Timeout(25.0, connect=5.0)
+    transport = httpx.AsyncHTTPTransport(retries=1)  # Simple retry
+
+    # Store shared client in application state
+    app.state.pineapple_client = httpx.AsyncClient(
+        base_url=settings.PINEAPPLE_API_URL,
+        headers=headers,
+        timeout=timeout,
+        transport=transport,
+        event_hooks={
+            "request": [log_request_hook],
+            "response": [log_response_hook],
+        },
+    )
+    logger.info(
+        f"Pineapple HTTP client initialized for base URL: {settings.PINEAPPLE_API_URL}"
+    )
+
+    # Initialize Supabase client on startup (ensures connection early)
+    try:
+        from app.db.session import get_supabase_client
+
+        get_supabase_client()  # Trigger initialization
+    except Exception as e:
+        logger.critical(f"Failed to initialize Supabase client on startup: {e}")
+        # We'll continue anyway and let individual requests fail if needed
+
+    yield  # Application runs here
+
+    # Shutdown
+    logger.info("Shutting down...")
+    if hasattr(app.state, "pineapple_client") and app.state.pineapple_client:
+        await app.state.pineapple_client.aclose()
+        logger.info("Pineapple HTTP client closed.")
+
+
+# --- Create FastAPI App ---
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    lifespan=lifespan,  # Use the lifespan context manager
+    description="API for creating insurance quotes and leads via Pineapple integration, with Supabase storage and auth.",
+    version="2.0.0",
+)
+
+# --- Apply Middleware (Order Matters!) ---
+
+# 1. Rate Limiter State & Middleware
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)  # Executes before routing
+
+# 2. CORS Middleware
+# IMPORTANT: Restrict origins in production! Use settings.BACKEND_CORS_ORIGINS
+logger.info(f"Configuring CORS for origins: {settings.BACKEND_CORS_ORIGINS}")
+
+# Parse the CORS origins string
+origins = []
+if settings.BACKEND_CORS_ORIGINS == "*":
+    origins = ["*"]  # Handle wildcard case
+else:
+    # Handle comma-separated list
+    origins = [
+        origin.strip()
+        for origin in settings.BACKEND_CORS_ORIGINS.split(",")
+        if origin.strip()
     ]
 
-    missing = []
-    for name, value in critical_vars:
-        if value is None or "YOUR_" in value or value == "your-bearer-token":
-            missing.append(name)
-
-    if missing:
-        print(
-            "ERROR: Critical environment variables are missing or have default values:"
-        )
-        for var in missing:
-            print(f"  - {var}")
-        print("\nPlease check your .env file configuration.")
-        print("You can run python validate_env.py to diagnose the issue.")
-        sys.exit(1)
-
-    # Verify API token format for Pineapple API
-    if (
-        "KEY=" not in settings.api_bearer_token
-        or "SECRET=" not in settings.api_bearer_token
-    ):
-        print(
-            "WARNING: API_BEARER_TOKEN may not be properly formatted for Pineapple API."
-        )
-        print("It should be in format: KEY=xxx SECRET=xxx")
-        print(
-            f"Current format: {settings.api_bearer_token[:10]}... ({len(settings.api_bearer_token)} chars)"
-        )
-        print("Pineapple API calls may fail with this token format.")
-        # Don't exit, just warn
-
-
-# Run the check before initializing the app
-check_environment()
-
-# Log system information on startup
-logger.info("====== SYSTEM INFORMATION ======")
-logger.info(f"Python version: {sys.version}")
-logger.info(f"Working directory: {os.getcwd()}")
-logger.info(f"Environment variables: {list(os.environ.keys())}")
-logger.info("===============================")
-
-app = FastAPI(
-    title="Pineapple Lead API",
-    description="API for managing leads and quotes for insurance products",
-    version="2.0.0",
-    docs_url="/",
-    redoc_url="/redoc",
-    openapi_tags=[
-        {
-            "name": "Leads",
-            "description": "Operations with customer leads",
-        },
-        {
-            "name": "Quotes",
-            "description": "Operations with insurance quotes",
-        },
-        {
-            "name": "Authentication",
-            "description": "Authentication and authorization endpoints",
-        },
-    ],
-    contact={
-        "name": "Support Team",
-        "email": "support@surestrat.co.za",
-    },
-    license_info={
-        "name": "Proprietary",
-        "url": "https://example.com/license",
-    },
-    openapi_url="/api/v1/openapi.json",
-)
-limiter = Limiter(key_func=lambda: "global")  # or another key function
-app.state.limiter = limiter
-app.add_middleware(SlowAPIMiddleware)
-
-# Configure CORS first
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Allow standard methods
+    allow_headers=["*"],  # Allow standard headers + Authorization etc.
 )
 
-# Add bearer token middleware - only for logging, not for enforcement
-app.add_middleware(BearerTokenMiddleware)
 
-# Security scheme for Swagger UI - keep this for documentation but don't enforce it
-security_scheme = HTTPBearer(auto_error=False)
-app.swagger_ui_init_oauth = {
-    "usePkceWithAuthorizationCodeGrant": True,
-    "clientId": "webClient",
-    "clientSecret": "",
-    "scopeSeparator": " ",
-    "useBasicAuthenticationWithAccessCodeGrant": False,
-}
-
-# Security scheme configuration
-app.openapi_schema = None
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token", scopes={})
-
-
-def custom_openapi():
-    if app.openapi_schema:
-        return app.openapi_schema
-
-    openapi_schema = get_openapi(
-        title=app.title,
-        version=app.version,
-        description=app.description,
-        routes=app.routes,
+# --- Add Exception Handlers ---
+# Rate limit exceeded handler
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        content={"detail": f"Rate limit exceeded: {exc.detail}"},
     )
 
-    # Add security scheme
-    openapi_schema["components"]["securitySchemes"] = {
-        "bearerAuth": {
-            "type": "http",
-            "scheme": "bearer",
-            "bearerFormat": "JWT",
-            "description": "Enter the JWT token you received from the /api/v1/auth/token endpoint",
-        }
-    }
 
-    # Apply security globally - this adds the Authorization button to Swagger UI
-    openapi_schema["security"] = [{"bearerAuth": []}]
-
-    app.openapi_schema = openapi_schema
-    return app.openapi_schema
-
-
-app.openapi = custom_openapi
-
-
-async def _rate_limit_exceeded_handler(request: Request, exc: Exception):
-    """Handler for rate limit exceeded exceptions."""
-    client_ip = request.client.host if request.client else "unknown"
-    endpoint = request.url.path
-    logger.warning(
-        f"Rate limit exceeded: {exc}. Client IP: {client_ip}, Endpoint: {endpoint}"
+# Optional: Global error handler for unexpected errors (catch-all)
+# Customize this to avoid leaking internal details in production
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    logger.exception(
+        f"Unhandled exception for request {request.method} {request.url}: {exc}"
     )
     return JSONResponse(
-        status_code=429,
-        content={
-            "detail": "Rate limit exceeded",
-            "endpoint": endpoint,
-        },
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "An unexpected internal server error occurred."},
     )
 
 
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# --- Include API Routers ---
+app.include_router(api_router, prefix=settings.API_V1_STR)
+
+# Add the pineapple router to the application only if it was successfully imported
+if HAS_PINEAPPLE_ROUTES and pineapple_router is not None:
+    app.include_router(pineapple_router, prefix="/api/v1/pineapple")
+    logger.info("Pineapple routes added to the application")
+else:
+    logger.warning("Pineapple routes were not added to the application")
 
 
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Handler for request validation exceptions."""
-    logger.error(f"Validation Error: {exc.errors()}")
-    return JSONResponse(
-        status_code=422,
-        content={"detail": exc.errors()},
+# --- Root Endpoint ---
+@app.get("/", tags=["Health"], summary="API Root/Health Check")
+async def read_root(request: Request):
+    """Basic health check endpoint. Confirms the API is running."""
+    # Note: request.client.host might be the proxy IP if behind one
+    client_host = request.headers.get(
+        "x-forwarded-for", request.client.host if request.client else "Unknown"
     )
+    logger.info(f"Root endpoint '/' accessed by {client_host}")
+    # Optionally add deeper health checks (e.g., test Supabase connection)
+    return {"message": f"Welcome to {settings.PROJECT_NAME}", "status": "healthy"}
 
 
-app.include_router(leads.router, prefix="/api/v1/leads", tags=["Leads"])
-app.include_router(quotes.router, prefix="/api/v1/quotes", tags=["Quotes"])
-app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
-
-
-@app.get("/health")
-async def health_check():
-    """Performs an API health check."""
-    health_info = {
-        "status": "ok",
-        "version": "2.0.0",
-        "timestamp": datetime.now().isoformat(),
-        "services": {
-            "appwrite": {"status": "unknown", "endpoint": Settings.appwrite_endpoint},
-            "pineapple": {
-                "status": "unknown",
-                "endpoint": Settings.pineapple_api_base_url,
-            },
-        },
-    }
-
-    # Check environment variables
-    if "YOUR_" in Settings.appwrite_endpoint or not Settings.appwrite_endpoint:
-        health_info["services"]["appwrite"]["status"] = "misconfigured"
-    else:
-        health_info["services"]["appwrite"]["status"] = "configured"
-
-    # Check Pineapple API token format
-    api_token = Settings.api_bearer_token
-    if "KEY=" in api_token and "SECRET=" in api_token:
-        health_info["services"]["pineapple"]["status"] = "configured"
-        health_info["services"]["pineapple"]["token_format"] = "KEY=xxx SECRET=xxx"
-    else:
-        health_info["services"]["pineapple"]["status"] = "warning"
-        health_info["services"]["pineapple"]["token_format"] = "non-standard"
-
-    return health_info
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Log important information when the application starts"""
-    from app.utils.logger import logger
-    from app.config.settings import settings
-
-    logger.info("====== FASTAPI APPLICATION STARTED ======")
-    logger.info(f"FastAPI version: {fastapi.__version__}")
-    logger.info(f"Host: {os.environ.get('HOST', '0.0.0.0')}")
-    logger.info(f"Port: {os.environ.get('PORT', '8000')}")
-    logger.info(f"Log level: {settings.log_level}")
-    logger.info(f"Environment: {os.environ.get('ENV', 'development')}")
-
-    # Log auth-related settings
-    logger.info(f"Auth test_username: '{settings.test_username}'")
-    logger.info(
-        f"Auth test_password length: {len(settings.test_password) if settings.test_password else 0}"
-    )
-    logger.info(f"Using algorithm: {settings.algorithm}")
-
-    # Log critical services configuration
-    logger.info(f"Appwrite endpoint: {settings.appwrite_endpoint}")
-    logger.info(f"Pineapple API base URL: {settings.pineapple_api_base_url}")
-    logger.info(f"Protected endpoints: {settings.protected_endpoints}")
-
-    # Check for default values that might indicate environment loading issues
-    if "YOUR_" in settings.appwrite_endpoint:
-        logger.warning(
-            "Using default placeholder Appwrite endpoint. Check your environment variables!"
-        )
-    if "your-bearer-token" == settings.api_bearer_token:
-        logger.warning(
-            "Using default placeholder API bearer token. Check your environment variables!"
-        )
-
-    # Verify Pineapple API token
-    api_token = settings.api_bearer_token
-    token_valid = "KEY=" in api_token and "SECRET=" in api_token
-
-    if token_valid:
-        logger.info("✅ Pineapple API token format is valid (contains KEY and SECRET)")
-    else:
-        if not api_token:
-            logger.error("❌ Pineapple API token is missing!")
-        elif "KEY=" not in api_token:
-            logger.warning("⚠️ Pineapple API token missing KEY= prefix")
-        elif "SECRET=" not in api_token:
-            logger.warning("⚠️ Pineapple API token missing SECRET= part")
-        else:
-            logger.warning("⚠️ Pineapple API token format is non-standard")
-
-    logger.info("=======================================")
-    logger.info("FastAPI application started.")
-
-
-# Configure static files
-# Create static files directory if it doesn't exist
-static_dir = Path(__file__).parent / "static"
-static_dir.mkdir(parents=True, exist_ok=True)
-
-# Copy swagger helper script if it doesn't exist
-swagger_helper_path = static_dir / "swagger-helper.js"
-if not swagger_helper_path.exists():
-    with open(swagger_helper_path, "w") as f:
-        f.write(
-            """
-// Swagger UI Helper - Adds token management functionality
-// ...content of swagger-helper.js...
-        """
-        )
-
-# Mount static files
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
-
-
-# Custom HTML for root to include the helper script
-@app.get("/", include_in_schema=False)
-async def custom_swagger_ui_html():
-    return HTMLResponse(
-        """<!DOCTYPE html>
-<html>
-<head>
-    <title>Pineapple Lead API</title>
-    <link type="text/css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
-</head>
-<body>
-    <div id="swagger-ui"></div>
-    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
-    <script>
-        const ui = SwaggerUIBundle({
-            url: '/api/v1/openapi.json',
-            dom_id: '#swagger-ui',
-            presets: [
-                SwaggerUIBundle.presets.apis,
-                SwaggerUIBundle.SwaggerUIStandalonePreset
-            ],
-            layout: "BaseLayout",
-            deepLinking: true,
-            showExtensions: true,
-            showCommonExtensions: true
-        });
-    </script>
-    <script src="/static/swagger-helper.js"></script>
-</body>
-</html>"""
-    )
+# --- Run instruction ---
+# Use: uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 [--log-level debug]
