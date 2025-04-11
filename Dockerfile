@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 # Set working directory
 WORKDIR /app
@@ -24,8 +24,8 @@ RUN useradd -m myuser
 USER myuser
 
 # Expose port
-EXPOSE 8000
-EXPOSE 4999
+EXPOSE 9000
+EXPOSE 9999
 
 # Run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9000"]
