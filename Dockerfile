@@ -10,7 +10,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Install system dependencies
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc curl postgresql-client \
+    && apt-get install -y --no-install-recommends \
+        gcc \
+        curl \
+        postgresql-client \
+        netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first to leverage Docker cache
@@ -39,5 +43,29 @@ EXPOSE $PORT
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=10s \
   CMD curl -f http://localhost:$PORT/ || exit 1
 
-# Run the application with gunicorn for production
-CMD uvicorn app.main:app --host 0.0.0.0 --port $PORT
+# Create a startup script that waits for the database before starting the app
+RUN echo '#!/bin/bash\n\
+echo "Waiting for Postgres database..."\n\
+# Extract host and user from DATABASE_URL\n\
+if [[ $DATABASE_URL =~ postgresql.*://([^:]+):([^@]+)@([^:]+):([^/]+) ]]; then\n\
+  DB_USER="${BASH_REMATCH[1]}"\n\
+  DB_HOST="${BASH_REMATCH[3]}"\n\
+  DB_PORT="${BASH_REMATCH[4]}"\n\
+  echo "Extracted DB_HOST=$DB_HOST DB_PORT=$DB_PORT DB_USER=$DB_USER"\n\
+  # Wait for database to be ready\n\
+  wait-for-postgres "$DB_HOST" "$DB_USER" "$@"\n\
+else\n\
+  echo "Could not parse DATABASE_URL, skipping database wait..."\n\
+fi\n\
+\n\
+# Apply database migrations\n\
+echo "Applying database migrations..."\n\
+alembic upgrade head\n\
+\n\
+# Start the application\n\
+echo "Starting application..."\n\
+uvicorn app.main:app --host 0.0.0.0 --port $PORT\n\
+' > /app/start.sh && chmod +x /app/start.sh
+
+# Run the startup script
+CMD ["/app/start.sh"]
