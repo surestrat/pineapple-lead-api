@@ -24,10 +24,3 @@ services:
       timeout: 10s
       retries: 5
       start_period: 15s
-
-networks:
-  pineapple-network:
-    driver: bridge
-
-volumes:
-  postgres_data:
