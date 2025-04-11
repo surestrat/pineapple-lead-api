@@ -7,45 +7,23 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
-    depends_on:
-      - postgres
     environment:
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/pineapple_api
+      - DATABASE_URL=${DATABASE_URL}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_KEY=${SUPABASE_KEY}
       - PINEAPPLE_API_URL=${PINEAPPLE_API_URL}
       - PINEAPPLE_API_BEARER_TOKEN=${PINEAPPLE_API_BEARER_TOKEN}
-      - PINEAPPLE_SOURCE_NAME=${PINEAPPLE_SOURCE_NAME:-SureStrat}
-      - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS:-*}
+      - PINEAPPLE_SOURCE_NAME=${PINEAPPLE_SOURCE_NAME}
+      - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       - ./logs:/app/logs
-    networks:
-      - pineapple-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 15s
-
-  postgres:
-    image: postgres:13
-    container_name: pineapple-postgres
-    restart: unless-stopped
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=pineapple_api
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - pineapple-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
 networks:
   pineapple-network:
