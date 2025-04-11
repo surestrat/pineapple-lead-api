@@ -1,1 +1,1 @@
-# Empty file to make "app" a recognized package
+# Package marker file

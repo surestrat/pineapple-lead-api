@@ -6,8 +6,9 @@ services:
     image: pineapple-lead-api
     ports:
       - "${PORT:-9000}:${PORT:-9000}"
-    volumes:
-      - ./app:/app/app # Mount only the app directory for development
+    # For production, don't mount local volumes as they can cause import issues
+    # volumes:
+    #   - ./app:/app/app # Only for development
     env_file:
       - .env
     environment:
@@ -19,6 +20,7 @@ services:
       - PINEAPPLE_API_BEARER_TOKEN=${PINEAPPLE_API_BEARER_TOKEN}
       - PINEAPPLE_SOURCE_NAME=${PINEAPPLE_SOURCE_NAME:-SureStrat}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - PYTHONPATH=/app
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${PORT:-9000}/"]
       interval: 30s
