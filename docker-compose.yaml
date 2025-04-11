@@ -3,24 +3,22 @@ version: "3.8"
 services:
   api:
     build: .
-    container_name: pineapple-lead-api
-    restart: unless-stopped
     ports:
       - "8000:8000"
-    environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_KEY=${SUPABASE_KEY}
-      - PINEAPPLE_API_URL=${PINEAPPLE_API_URL}
-      - PINEAPPLE_API_BEARER_TOKEN=${PINEAPPLE_API_BEARER_TOKEN}
-      - PINEAPPLE_SOURCE_NAME=${PINEAPPLE_SOURCE_NAME}
-      - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
-      - ./logs:/app/logs
+      - ./app:/app/app
+    env_file:
+      - app/.env
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 15s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - pineapple_network
+
+networks:
+  pineapple_network:
+    driver: bridge
